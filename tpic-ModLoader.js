@@ -1138,7 +1138,7 @@ SOFTWARE.
                   }
                 })
                 break;
-              case "typicmodloader_spriteMenu":
+              case "typicmodloader_broadcastMenu":
                 console.warn("The BMenu found: it routes to: " + JSON.stringify(newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent]));
                 Object.keys(newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs).forEach((input) => {
                   if (newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs[input].block === newTarget.blocks._blocks[key].id) {
