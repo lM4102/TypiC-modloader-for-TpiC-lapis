@@ -1445,6 +1445,10 @@ SOFTWARE.
       if (iframeOld) {
         Scratch.vm.renderer.removeOverlay(iframeOld);
       }
+      //delete everything in the zip file and clear the sets
+      zip.forEach((relativePath, file) => {
+        zip.remove(relativePath);
+      });
       mapIDs.clear();
       mapsSet.clear();
       teleportersSet.clear();
