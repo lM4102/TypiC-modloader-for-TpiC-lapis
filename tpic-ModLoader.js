@@ -1092,6 +1092,9 @@ SOFTWARE.
       Scratch.vm.duplicateSprite(target.id).then(() => {
 
         let newTarget = Scratch.vm.runtime.getEditingTarget();
+        const previousName = target.getName()
+        Scratch.vm.renameSprite(target.id, previousName + "_temp_name");
+        Scratch.vm.renameSprite(newTarget.id, previousName);
         console.log(JSON.stringify(newTarget.blocks._blocks))
         //Iterate through the blocks of the sprite
         Object.keys(newTarget.blocks._blocks).forEach((key) => {
@@ -1208,6 +1211,7 @@ SOFTWARE.
         })
         customSpritesSet.add(JSON.stringify(spriteInfo));
         Scratch.vm.deleteSprite(newTarget.id);
+        Scratch.vm.renameSprite(target.id, previousName);
       });
     }
 
