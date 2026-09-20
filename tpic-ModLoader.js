@@ -1,5 +1,5 @@
 /**
- * @fileoverview TyPIC Mod Loader extension for Turbowarp. This extension allows users to easily create TPIC mods by providing blocks to create maps, drops, and custom sprites, as well as to manage game variables and events. This extension copies fragments of code of other extensions (Like ShovelUtils) and from Turbowarp's source code to make the mod loader work.
+ * @fileoverview TyPIC Mod Loader extension for Turbowarp. This extension allows users to easily create TPIC mods by providing blocks to create maps, drops, and custom sprites, as well as to manage game variables and events. This extension may copy fragments of code of other extensions and from Turbowarp's source code to make the mod loader work.
  */
 /*LICENSE:
 MIT License
@@ -45,6 +45,7 @@ SOFTWARE.
   let teleportersSet = new Set();
   let dropsSet = new Set();
   let customSpritesSet = new Set();
+  let customMixinsSet = new Set();
   let modid = "myMod";
   let UIDs = new Set();
   const chars = ["a", "b", "c", "d", "e", "f", "g", "h", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", ".", ",", "-", "(", ")", "[", "]"]
@@ -52,9 +53,23 @@ SOFTWARE.
 
     let string = "";
     for (let i = 0; i < 10; i++) {
-      string = string.concat(chars[Math.ceil(Math.random() * chars.length)])
+      string = string.concat(chars[Math.ceil(Math.random() * chars.length)]);
     }
     return string;
+  }
+  //from trubowarp's StringUtil
+  function withoutTrailingDigits (s) {
+        let i = s.length - 1;
+        while ((i >= 0) && ('0123456789'.indexOf(s.charAt(i)) > -1)) i--;
+        return s.slice(0, i + 1);
+    }
+  function getDuplicatedTargetName(originalName) {
+    let existingNames = Scratch.vm.runtime.targets.map(t => t.getName());
+    if (existingNames.indexOf(originalName) < 0) return originalName;
+        originalName = withoutTrailingDigits(originalName);
+        let i = 2;
+        while (existingNames.indexOf(originalName + i) >= 0) i++;
+        return originalName + i;
   }
   class TyPICModLoader {
 
@@ -146,6 +161,17 @@ SOFTWARE.
             text: 'Make this sprite a custom sprite',
           },
           {
+            opcode: 'makeMixin',
+            blockType: Scratch.BlockType.COMMAND,
+            text: 'Make this sprite a mixin sprite with target [TARGET]',
+            arguments: {
+              TARGET: {
+                type: Scratch.ArgumentType.STRING,
+                menu: "gsMenu"
+              }
+            }
+          },
+          {
             opcode: 'closeGame',
             blockType: Scratch.BlockType.COMMAND,
             text: 'Close game',
@@ -200,6 +226,13 @@ SOFTWARE.
           },
           {
             blockType: Scratch.BlockType.EVENT,
+            opcode: 'whenMixinsRegistered',
+            text: 'When mixin registration starts',
+            isEdgeActivated: false,
+
+          },
+          {
+            blockType: Scratch.BlockType.EVENT,
             opcode: 'whenCustomSpritesRegistered',
             text: 'When custom sprite registration starts',
             isEdgeActivated: false,
@@ -221,6 +254,12 @@ SOFTWARE.
             blockType: Scratch.BlockType.COMMAND,
             opcode: 'registerDrops',
             text: 'Send whenDropsRegistered event',
+            hideFromPalette: true
+          },
+          {
+            blockType: Scratch.BlockType.COMMAND,
+            opcode: 'registerMixins',
+            text: 'Send whenMixinsRegistered event',
             hideFromPalette: true
           },
           {
@@ -253,6 +292,7 @@ SOFTWARE.
             text: "setupZip",
             hideFromPalette: true
           },
+          //EVENT PLACEHOLDERS
           {
             blockType: "label",
             text: "Event placeholders",
@@ -421,11 +461,18 @@ SOFTWARE.
           }
         ],
         menus: {
+          costumeTypeMenu: {
+            acceptReporters: false,
+            items: [
+              "number",
+              "name"
+            ]
+          },
           broadcastMenu: {
             acceptReporters: false,
             items: [
               "1.5 Completed",
-              {text: "(MODLOADER) addSprites", value: "addSprites"},
+              { text: "(MODLOADER) addSprites", value: "addSprites" },
               "baseplemp",
               "bossfight end",
               "calmgonow",
@@ -436,7 +483,7 @@ SOFTWARE.
               "collections",
               "colorfallgonow",
               "copycats away",
-              {text: "(MODLOADER) customgonow"},
+              { text: "(MODLOADER) customgonow" },
               "drop end",
               "END (1/3)",
               "END (2/3)",
@@ -839,7 +886,7 @@ SOFTWARE.
         case 'Show Data On Screen':
           return 'Dm4?$,FI7f+:ZeD;}G([';
         case 'Pet Skin':
-          return ']]^~)*TsXD(lY!RnaKy-';  
+          return ']]^~)*TsXD(lY!RnaKy-';
         case 'Show Pet':
           return '38q;knedvRq=-17ZA^Sh';
         case 'Deaths':
@@ -867,7 +914,7 @@ SOFTWARE.
         case 'EVERYTHINGSONFIREEVERYTHINGSONFIRE':
           return ';=;zf?@[a~@e1`m24hDz';
         case 'final fire':
-          return '?)hF(OF8vZXr=6ckvDX]'; 
+          return '?)hF(OF8vZXr=6ckvDX]';
         default:
           return uid();
       }
@@ -1088,10 +1135,12 @@ SOFTWARE.
     }
     makeCustomSprite(args, util) {
       const target = util.thread.target;
-      //Most complicated part of the modloader, filter out the blocks that are for adding the sprite and changing the blocks that need to be changed to make the sprite work in the mod. Then export the sprite and add it to the zip file, and add its info to the customSpritesSet
+      //Second most complicated part of the modloader, filter out the blocks that are for adding the sprite and changing the blocks that need to be changed to make the sprite work in the mod. Then export the sprite and add it to the zip file, and add its info to the customSpritesSet
+      //(Most complicated part is mixins)
+      const duplicatedName = getDuplicatedTargetName(target.getName());
       Scratch.vm.duplicateSprite(target.id).then(() => {
 
-        let newTarget = Scratch.vm.runtime.getEditingTarget();
+        let newTarget = Scratch.vm.runtime.getSpriteTargetByName(duplicatedName);
         const previousName = target.getName()
         Scratch.vm.renameSprite(target.id, previousName + "_temp_name");
         Scratch.vm.renameSprite(newTarget.id, previousName);
@@ -1147,7 +1196,7 @@ SOFTWARE.
                   if (newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs[input].block === newTarget.blocks._blocks[key].id) {
                     newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs[input].block = newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs[input].shadow;
                     Object.keys(newTarget.blocks._blocks[newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs[input].shadow].fields).forEach((field) => {
-                      newTarget.blocks._blocks[newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs[input].shadow].fields[field] = {name: field,value: newTarget.blocks._blocks[key].fields.BROADCASTOPTION.value, variableType: "broadcast_msg",id: this.getVariableId(newTarget.blocks._blocks[key].fields.BROADCASTOPTION.value,"broadcast_msg")};
+                      newTarget.blocks._blocks[newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].inputs[input].shadow].fields[field] = { name: field, value: newTarget.blocks._blocks[key].fields.BROADCASTOPTION.value, variableType: "broadcast_msg", id: this.getVariableId(newTarget.blocks._blocks[key].fields.BROADCASTOPTION.value, "broadcast_msg") };
                     })
                   }
                 })
@@ -1213,6 +1262,143 @@ SOFTWARE.
         Scratch.vm.deleteSprite(newTarget.id);
         Scratch.vm.renameSprite(target.id, previousName);
       });
+    }
+    makeMixin(args, util) {
+      //Most complicated part of the modloader, this method changes the blocks and with the blocks info, it makes a mixin file for the game. It also adds the mixin file to the zip and adds its info to the customMixinsSet
+      const targetMix = util.thread.target;
+      const duplicatedName = getDuplicatedTargetName(targetMix.getName());
+      Scratch.vm.duplicateSprite(targetMix.id).then(() => {
+        let newTargetMix = Scratch.vm.runtime.getSpriteTargetByName(duplicatedName);
+        //Change duplicated sprite
+        Object.keys(newTargetMix.blocks._blocks).forEach((key) => {
+          console.log("Block opcode: " + newTargetMix.blocks._blocks[key]);
+          if (!newTargetMix.blocks._blocks[key]) {
+            console.error("Block key: " + key + " doesn't exist");
+            return;
+          }
+          if (newTargetMix.blocks._blocks[key].opcode == "typicmodloader_makeCustomSprite" || newTargetMix.blocks._blocks[key].opcode == "typicmodloader_whenCustomSpritesRegistered" || newTargetMix.blocks._blocks[key].opcode == "typicmodloader_makeMixin") {
+            console.warn("Removing block " + newTargetMix.blocks._blocks[key].opcode + " from custom sprite because it is not needed.");
+            newTargetMix.blocks.deleteBlock(key);
+            return;
+          } else {
+            switch (newTargetMix.blocks._blocks[key].opcode) {
+              case "typicmodloader_whenflagclicked":
+                console.warn("WhenFlagClicked found: " + JSON.stringify(newTargetMix.blocks._blocks[key]), newTargetMix.blocks._blocks[key]);
+                newTargetMix.blocks._blocks[key].opcode = "event_whenbroadcastreceived";
+                newTargetMix.blocks._blocks[key].fields.BROADCAST_OPTION = { id: undefined, name: "BROADCAST_OPTION", value: "green flag" };
+                break;
+              case "typicmodloader_spriteMenu":
+                console.warn("The Menu found: it routes to: " + JSON.stringify(newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent]));
+                Object.keys(newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs).forEach((input) => {
+                  if (newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].block === newTargetMix.blocks._blocks[key].id) {
+                    newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].block = newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].shadow;
+                    Object.keys(newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].shadow].fields).forEach((field) => {
+                      newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].shadow].fields[field].value = newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].inputs.MENU.block].fields.gsMenu.value;
+                    })
+                  }
+                })
+                //newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].fields.TO = {name: "TO", value: newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].inputs.MENU.block].fields.gsMenu.value}
+                console.warn("THe MEAnu: ", newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent]);
+                newTargetMix.blocks.deleteBlock(key);
+                return;
+                break;
+              case "typicmodloader_varMenu":
+                console.warn("The VMenu found");
+                if (!newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent]) { return; }
+                Object.keys(newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs).forEach((input) => {
+                  if (newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].block === newTargetMix.blocks._blocks[key].id) {
+                    newTargetMix.blocks._blocks[key].opcode = "data_variable";
+                    newTargetMix.blocks._blocks[key].fields.VARIABLE = { name: "VARIABLE", id: this.getVariableId(newTargetMix.blocks._blocks[key].fields.VAR.value), variableType: "", value: newTargetMix.blocks._blocks[key].fields.VAR.value }
+
+                    newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].block = newTargetMix.blocks._blocks[key].id;
+                  }
+                })
+                break;
+              case "typicmodloader_broadcastMenu":
+                console.warn("The BMenu found: it routes to: " + JSON.stringify(newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent]));
+                Object.keys(newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs).forEach((input) => {
+                  if (newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].block === newTargetMix.blocks._blocks[key].id) {
+                    newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].block = newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].shadow;
+                    Object.keys(newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].shadow].fields).forEach((field) => {
+                      newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent].inputs[input].shadow].fields[field] = { name: field, value: newTargetMix.blocks._blocks[key].fields.BROADCASTOPTION.value, variableType: "broadcast_msg", id: this.getVariableId(newTarget.blocks._blocks[key].fields.BROADCASTOPTION.value, "broadcast_msg") };
+                    })
+                  }
+                })
+                //newTarget.blocks._blocks[newTarget.blocks._blocks[key].parent].fields.TO = {name: "TO", value: newTarget.blocks._blocks[newTarget.blocks._blocks[key].inputs.MENU.block].fields.gsMenu.value}
+                console.warn("THe BMenu: ", newTargetMix.blocks._blocks[newTargetMix.blocks._blocks[key].parent]);
+                newTargetMix.blocks.deleteBlock(key);
+                return;
+                break;
+              case "typicmodloader_showVar":
+                console.log(newTargetMix.blocks._blocks[key].fields.VAR.value)
+                newTargetMix.blocks._blocks[key].opcode = "data_showvariable";
+                newTargetMix.blocks._blocks[key].fields.VARIABLE = { name: "VARIABLE", id: this.getVariableId(newTargetMix.blocks._blocks[key].fields.VAR.value), variableType: "", value: newTargetMix.blocks._blocks[key].fields.VAR.value }
+                console.log(newTargetMix.blocks._blocks[key].fields.VARIABLE)
+                break;
+              case "typicmodloader_hideVar":
+                console.log(newTargetMix.blocks._blocks[key].fields.VAR.value)
+                newTargetMix.blocks._blocks[key].opcode = "data_hidevariable";
+                newTargetMix.blocks._blocks[key].fields.VARIABLE = { name: "VARIABLE", id: this.getVariableId(newTargetMix.blocks._blocks[key].fields.VAR.value), variableType: "", value: newTargetMix.blocks._blocks[key].fields.VAR.value }
+                console.log(newTargetMix.blocks._blocks[key].fields.VARIABLE)
+                break;
+              case "typicmodloader_setVar":
+                console.log(newTargetMix.blocks._blocks[key].fields.VAR.value)
+                newTargetMix.blocks._blocks[key].opcode = "data_setvariableto";
+                newTargetMix.blocks._blocks[key].fields.VARIABLE = { name: "VARIABLE", id: this.getVariableId(newTargetMix.blocks._blocks[key].fields.VAR.value), variableType: "", value: newTargetMix.blocks._blocks[key].fields.VAR.value }
+                console.log(newTargetMix.blocks._blocks[key].fields.VARIABLE)
+                break;
+              case "typicmodloader_changeVar":
+                console.log(newTargetMix.blocks._blocks[key].fields.VAR.value)
+                newTargetMix.blocks._blocks[key].opcode = "data_changevariableby";
+                newTargetMix.blocks._blocks[key].fields.VARIABLE = { name: "VARIABLE", id: this.getVariableId(newTargetMix.blocks._blocks[key].fields.VAR.value), variableType: "", value: newTargetMix.blocks._blocks[key].fields.VAR.value }
+                console.log(newTargetMix.blocks._blocks[key].fields.VARIABLE)
+                break;
+              case "typicmodloader_whenbroadcastreceived":
+                newTargetMix.blocks._blocks[key].opcode = "event_whenbroadcastreceived"
+                const BROADCASTOPTION1 = newTargetMix.blocks._blocks[key].fields.BROADCASTOPTION;
+                newTargetMix.blocks._blocks[key].fields = { BROADCAST_OPTION: BROADCASTOPTION1 }
+                break;
+              case "typicmodloader_whenkeypressed":
+                newTargetMix.blocks._blocks[key].opcode = "event_whenkeypressed";
+                break;
+              case "typicmodloader_whenthisspriteclicked":
+                newTargetMix.blocks._blocks[key].opcode = "event_whenthisspriteclicked"
+                break;
+              case "typicmodloader_whengreaterthan":
+                newTargetMix.blocks._blocks[key].opcode = "event_whengreaterthan";
+                break;
+            }
+          }
+        });
+        let mixinInfo = {
+          id: targetMix.sprite.name + "_mixin",
+          blocks: {
+            "blockset1": newTargetMix.blocks._blocks
+          },
+          info: {
+            target: args.TARGET,
+            applyInfo: [
+              {
+                blocksId: "blockset1",
+                type: "addScript"
+              }
+            ]
+
+
+          }
+
+        }
+        customMixinsSet.forEach((value) => {
+          if (value.id == target.sprite.name + "_mixin") {
+            customMixinsSet.delete(value);
+          }
+        }
+        )
+        customMixinsSet.add(JSON.stringify(mixinInfo));
+        Scratch.vm.deleteSprite(newTargetMix.id);
+      }
+      )
+
     }
 
     /**
@@ -1457,6 +1643,7 @@ SOFTWARE.
       mapsSet.clear();
       teleportersSet.clear();
       dropsSet.clear();
+      customMixinsSet.clear();
       const iframe = document.createElement("iframe");
       iframeOld = iframe;
       iframe.src = URL.createObjectURL(this.file);
@@ -1670,7 +1857,7 @@ SOFTWARE.
      */
     setupZip(args, util) {
       const iframe = iframeOld;
-
+      console.log("Editing target: " + iframe.contentWindow.Scratch.vm.runtime.getEditingTarget().getName());
       console.log("Scratch VM is ready in the iframe.");
       const broadcast = "LoadMod";
       if (!broadcast) return;
@@ -1682,6 +1869,7 @@ SOFTWARE.
       JSONFile.teleporters = Array.from(teleportersSet);
       JSONFile.drops = Array.from(dropsSet);
       JSONFile.sprites = Array.from(customSpritesSet);
+      JSONFile.mixins = Array.from(customMixinsSet);
       zip.file(modid + "/" + modid + ".json", JSON.stringify(JSONFile));
       console.log("JSON: " + JSON.stringify(JSONFile));
       const data = this.getZipFile();
@@ -1725,6 +1913,9 @@ SOFTWARE.
     }
     registerCustomSprites(args, util) {
       util.startHats('typicmodloader_whenCustomSpritesRegistered');
+    }
+    registerMixins(args, util) {
+      util.startHats('typicmodloader_whenMixinsRegistered');
     }
   }
 
