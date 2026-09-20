@@ -260,7 +260,7 @@ SOFTWARE.
             blockType: Scratch.BlockType.COMMAND,
             opcode: 'registerMixins',
             text: 'Send whenMixinsRegistered event',
-            hideFromPalette: false
+            hideFromPalette: true
           },
           {
             blockType: Scratch.BlockType.COMMAND,
